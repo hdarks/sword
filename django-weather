@@ -1,0 +1,204 @@
+# weather folder
+# urls.py
+from django.contrib import admin
+from django.urls import path, include
+urlpatterns = [
+    path("admin/", admin.site.urls),
+    path("", include("climate.urls")),
+]
+
+# climate app
+# admin.py
+from django.contrib import admin
+from .models import City
+admin.site.register(City)
+
+# forms.py
+from django.forms import ModelForm, TextInput
+from .models import City
+
+class CityForm(ModelForm):
+    class Meta:
+        model = City
+        fields = ['name']
+        widgets = {
+            'name': TextInput(attrs={'class' : 'input', 'placeholder' : 'City Name'}),
+        } #updates the input class to have the correct Bulma class and placeholder
+
+# models.py
+from django.db import models
+
+class City(models.Model):
+    name = models.CharField(max_length=25)
+    
+    def __str__(self): #show the actual city name on the dashboard
+        return self.name
+
+    class Meta: #show the plural of city as cities instead of citys
+        verbose_name_plural = 'cities'
+
+# urls.py
+from django.urls import path
+from . import views
+urlpatterns = [
+    path("", views.index),  #the path for our index view
+]
+
+# views.py
+from django.shortcuts import render
+# import json to load json data to python dictionary
+import json
+# urllib.request to make a request to api
+import urllib.request
+
+def index(request):
+	if request.method == 'POST':
+		city = request.POST['city']
+
+		# source contain JSON data from API
+
+		source = urllib.request.urlopen('http://api.openweathermap.org/data/2.5/weather?q='+city+'&appid=77da2ce15a3de0c53796b242ac436e10').read()
+
+		# converting JSON data to a dictionary
+		list_of_data = json.loads(source)
+
+		# data for variable list_of_data
+		data = {
+			"country_code": str(list_of_data['sys']['country']),
+			"coordinate": str(list_of_data['coord']['lon']) + ' '
+						+ str(list_of_data['coord']['lat']),
+			"temp": str(list_of_data['main']['temp']) + 'k',
+			"pressure": str(list_of_data['main']['pressure']),
+			"humidity": str(list_of_data['main']['humidity']),
+		}
+		print(data)
+	else:
+		data ={}
+	return render(request, "index.html", data)
+
+# template
+# index.html
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+
+<head>
+  <meta charset="utf-8">
+  <title>weather</title>
+  <!-- Latest compiled and minified CSS -->
+  <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.0/css/bootstrap.min.css">
+
+  <!-- jQuery library -->
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js"></script>
+
+  <!-- Latest compiled JavaScript -->
+  <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.0/js/bootstrap.min.js"></script>
+
+</head>
+
+<body>
+  <nav class="row" style="background: green; color: white;">
+    <h1 class="col-md-3 text-center">weather</h1>
+  </nav>
+  <br />
+  <br />
+  <center class="row">
+    <form method="post" class="col-md-6 col-md-offset-3">
+      {% csrf_token %}
+      <div class="input-group">
+        <input type="text" class="form-control" name="city" placeholder="Search">
+        <div class="input-group-btn">
+          <button class="btn btn-default" type="submit">
+            <i class="glyphicon glyphicon-search"></i>
+          </button>
+        </div>
+        <form>
+  </center>
+  <div class="row">
+    {% if country_code and coordinate and temp and pressure and humidity %}
+    <div class="col-md-6 col-md-offset-3">
+      <h3>country code : {{country_code}}</h1>
+        <h5>coordinate : {{coordinate}}</h5>
+        <h5>temp : {{temp}}</h5>
+        <h5>pressure : {{pressure}} </h5>
+        <h5>humidity : {{humidity}}</h5>
+    </div>
+    {% endif %}
+  </div>
+</body>
+</html>
+
+# new.html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>What's the weather like?</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bulma/0.6.2/css/bulma.css" />
+</head>
+<body>
+    <section class="hero is-primary">
+        <div class="hero-body">
+            <div class="container">
+                <h1 class="title">
+                    What's the weather like?
+                </h1>
+            </div>
+        </div>
+    </section>
+    <section class="section">
+        <div class="container">
+            <div class="columns">
+                <div class="column is-offset-4 is-4">
+                    <form method="POST">
+                        {% csrf_token %}
+                        <div class="field has-addons">
+                            <div class="control is-expanded">
+                                {{ form.name }}
+                            </div>
+                            <div class="control">
+                                <button class="button is-info">
+                                    Add City
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </section>
+    <section class="section">
+        <div class="container">
+            <div class="columns">
+               
+                <div class="column is-offset-4 is-4">
+                    {% for weather in weather_data %}
+                    <div class="box">
+                        <article class="media">
+                            <div class="media-left">
+                                <figure class="image is-50x50">
+                                    <img src="http://openweathermap.org/img/w/{{ weather.icon }}.png" alt="Image">
+                                </figure>
+                            </div>
+                            <div class="media-content">
+                                <div class="content">
+                                    <p>
+                                        <span class="title">{{ weather.city }}</span>
+                                        <br>
+                                        <span class="subtitle">{{ weather.temperature }}° F</span>
+                                        <br> {{ weather.description }}
+                                    </p>
+                                </div>
+                            </div>
+                        </article>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </section>
+    <footer class="footer">
+    </footer>
+</body>
+</html>
