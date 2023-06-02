@@ -37,3 +37,132 @@ class SignUpView(generic.CreateView):
     form_class=UserCreationForm
     success_url=reverse_lazy("login")
     template_name="registration/signup.html"
+
+# template
+# base.html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %} Django App {% endblock%}</title>
+    <style>
+        body{
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: linear-gradient(45deg,pink,green);
+            flex-direction: column;
+            height: 100vh;
+        }
+        h2{
+            font-size: xx-large;
+        }
+    </style>
+</head>
+<body>
+    {% block content %}
+    {% endblock %}
+</body>
+</html>
+
+# home.html
+{% extends 'base.html' %}
+{% block title %}
+Home 
+{% endblock %}
+{% block content %}
+{% if user.is_authenticated %}
+{{user.username}}
+<a href="{% url 'logout' %}"><h2>Logout</h2> </a>
+<a href="{% url 'password_reset' %}"><h2> Password Reset</h2></a>
+{% else %}
+<h2>YOU are not logged in </h2>
+<a href="{% url 'login' %}" style=" padding: 20px;background-color: whitesmoke; border-radius: 20px;"><b><h1>Log In</h1></b> </a>
+{% endif %}
+{% endblock%}
+
+# registration
+# login.html
+<style>
+    #login{
+        background-color: pink;
+        display: flex;
+        justify-content: start;
+        align-items: center;
+        height: 60vh;
+        flex-direction: column;
+    }
+    input{
+        border-radius: 20px;
+        margin-top: 20px;
+    }    
+</style>
+    <div id="login">
+        <h1> Log In</h1>
+    <form id="login" action="" method="POST">
+        {% csrf_token %}
+        {{form.as_p}}
+        <button style=" padding: 20px;background-color: whitesmoke; border-radius: 20px;" type="submit">Log In</button>
+    </form>
+    <a href="{% url 'signup' %}" style=" padding: 20px;background-color: whitesmoke; border-radius: 20px;">Signup </a>
+    </div>
+
+# password_reset_complete.html
+{% extends 'base.html' %}
+{% block title %} password reset complete {% endblock %}
+{% block content %} 
+<h1> Password  Reset complete </h1>
+<span> Your new password has been set successfully <a href="{% url 'login'%}">Login</a></span>
+{% endblock %}
+
+# password_reset_confirm.html
+{% extends 'base.hyml' %}
+{% block title %} Forgot your PAssword {% endblock %}
+{% block content %} 
+<h1>set neew Password </h1>
+{% if validlink %}
+<form action="" method="POST">
+    {% csrf_token %}
+{{form.as_p}}
+<input type="submit" value="change my password">
+</form>
+{% else %}
+<p>The password reset link is invalid ,possibily  it has already been used  Please
+    request the new password reset
+</p>
+{% endif %}
+{% endblock %}
+
+# password_reset_done.html
+{% extends 'base.html' %}
+{% block title %}Email Sent{% endblock %}
+{% block content %} 
+<h1> Chek your inbox </h1>
+<span>We have Emailed your instructions Shortly </span>
+{% endblock %}
+
+# password_reset_form.html
+{% extends 'base.html' %}
+{% block title %} Forgot your PAssword {% endblock %}
+{% block content %} 
+<h1>Forgot Your Password </h1>
+<form action="" method="POST">
+    {% csrf_token %}
+{{form.as_p}}
+<input type="submit" value="Sent me Instruction ">
+</form>
+{% endblock %}
+
+# signup.html
+{% extends 'base.html' %}
+{% block title %}{% endblock%}
+{% block content %}
+<h2>Sign Up</h2>
+<form action="" method="POST">
+    {% csrf_token %}
+    {{form.as_p}}
+    <button type="submit">Submit</button>
+</form>
+{% endblock%}
