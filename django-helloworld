@@ -1,0 +1,21 @@
+# hello folder
+# urls.py
+from django.contrib import admin
+from django.urls import path, include
+urlpatterns = [
+    path("admin/", admin.site.urls),
+    path("", include("heloword.urls")),
+]
+
+# heloword app
+# urls.py
+from django.urls import path
+from . import views
+urlpatterns = [
+    path("heloword/",views.myfunction, name = "heloword"),
+]
+
+# views.py
+from django.http import HttpResponse
+def myfunction(request):
+    return HttpResponse("<h1>Hello, World!</h1>")
