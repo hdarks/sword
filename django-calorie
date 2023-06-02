@@ -1,0 +1,1022 @@
+# Caloriecalc
+# urls.py
+from django.contrib import admin
+from django.urls import path,include
+
+urlpatterns = [
+    path('admin/', admin.site.urls),
+    path('',include('Fityfeed.urls')),
+]
+
+# settings.py
+STATIC_URL = '/static/'
+STATICFILES_DIRS = [
+    os.path.join(BASE_DIR,'static'),
+]
+EMAIL_BACKEND='django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST='smtp.gmail.com'
+EMAIL_PORT=587
+EMAIL_USE_TLS=True
+EMAIL_HOST_USER='***'
+EMAIL_HOST_PASSWORD='***'
+
+# Fityfeed
+# admin.py
+from django.contrib import admin
+from .models import *
+class foodAdmin(admin.ModelAdmin):
+    class Meta:
+        model=Fooditem
+    list_display=['name']
+    list_filter=['name']
+admin.site.register(Customer)
+admin.site.register(UserFooditem)
+admin.site.register(Category)
+admin.site.register(Fooditem,foodAdmin)
+
+# decorators.py
+from django.http import HttpResponse
+from django.shortcuts import redirect
+
+def unauthorized_user(view_func): 
+    def wrapper_func(request,*args,**kwargs):
+        if request.user.is_authenticated:
+            return redirect('home')
+        else:
+            return view_func(request,*args,**kwargs)
+    return wrapper_func
+
+def allowed_users(allowed_roles=[]):
+    def decorator(view_func): 
+        def wrapper_func(request,*args,**kwargs):
+            group=None
+            if request.user.groups.exists():
+                group=request.user.groups.all()[0].name
+            if group in allowed_roles:
+                return view_func(request,*args,**kwargs)
+            else:
+                return HttpResponse("<h1>You are not allowed to access this page</h1>")
+        return wrapper_func
+    return decorator
+
+def admin_only(view_func):
+    def wrapper_func(request,*args,**kwargs):
+        group=None
+        if request.user.groups.exists():
+            group=request.user.groups.all()[0].name
+        if group=='user':
+            return redirect('userPage')
+        if group=='admin':
+            return view_func(request,*args,**kwargs)
+    return wrapper_func
+
+# filters.py
+import django_filters
+from .models import *
+
+class fooditemFilter(django_filters.FilterSet):
+    class Meta:
+        model = Fooditem
+        fields = ['name']
+
+# forms.py
+from django.forms import ModelForm
+from .models import *
+from django.contrib.auth.forms import UserCreationForm
+
+class fooditemForm(ModelForm):
+    class Meta:
+        model=Fooditem
+        fields="__all__"
+
+class addUserFooditem(ModelForm):
+    class Meta:
+        model=UserFooditem
+        fields="__all__"
+        
+class createUserForm(UserCreationForm):
+    class Meta:
+        model=User
+        fields=['username','email','password1','password2']
+
+# models.py
+from django.db import models
+from django.contrib.auth.models import User
+
+# Create your models here.
+class Customer(models.Model):
+    user = models.OneToOneField(User, null=True, on_delete=models.CASCADE)
+    name=models.CharField(max_length=200,null=True)
+    email=models.CharField(max_length=200,null=True)
+    date_created=models.DateTimeField(auto_now_add=True,null=True)
+    
+    def __str__(self):
+        return str(self.name)
+
+class Category(models.Model):
+    options=(
+        ('breakfast','breakfast'),
+        ('lunch','lunch'),
+        ('dinner','dinner'),
+        ('snacks','snacks'),
+    )
+    name=models.CharField(max_length=50,choices=options)
+    def __str__(self):
+        return self.name
+
+class Fooditem(models.Model):
+    name = models.CharField(max_length=200)
+    category = models.ManyToManyField(Category)
+    carbohydrate = models.DecimalField(max_digits=5,decimal_places=2,default=0)
+    fats = models.DecimalField(max_digits=5,decimal_places=2,default=0)
+    protein = models.DecimalField(max_digits=5,decimal_places=2,default=0)
+    calorie=models.DecimalField(max_digits=5,decimal_places=2,default=0,blank=True)
+    quantity = models.IntegerField(default=1,null=True,blank=True)
+    
+    def __str__(self):
+        return str(self.name)
+
+#for user page-------------------------------------------------------------
+class UserFooditem(models.Model):
+    customer = models.ManyToManyField(Customer,blank=True)
+    fooditem=models.ManyToManyField(Fooditem)
+
+# urls.py
+from django.urls import path,include
+from . import views
+from django.contrib.auth import views as auth_views
+
+urlpatterns = [
+    path('',views.home,name='home'),
+    path('user/',views.userPage,name='userPage'), #userPage
+    path('product/',views.fooditem,name='fooditem'),
+    path('createfooditem/',views.createfooditem,name='createfooditem'),
+    path('register/',views.registerPage,name='register'),
+    path('login/',views.loginPage,name='login'),
+    path('logout/',views.logoutUser,name='logout'),
+    path('addFooditem/',views.addFooditem,name='addFooditem'),
+     path('reset_password/',
+         auth_views.PasswordResetView.as_view(),
+         name="reset_password"),
+
+    path('reset_password_sent/',
+         auth_views.PasswordResetDoneView.as_view(),
+         name="password_reset_done"),
+
+    path('reset/<uidb64>/<token>/',
+         auth_views.PasswordResetConfirmView.as_view(),
+         name="password_reset_confirm"),
+
+    path('reset_password_complete/',
+         auth_views.PasswordResetCompleteView.as_view(),
+         name="password_reset_complete"),
+]
+
+# views.py
+from django.shortcuts import render,redirect
+from django.http import HttpResponse
+from django.contrib.auth.models import User
+from .models import *
+from .forms import *
+from django.contrib import messages
+from django.contrib.auth import authenticate,login,logout
+from django.contrib.auth.decorators import login_required
+from .decorators import *
+from django.contrib.auth.models import Group
+from .filters import fooditemFilter
+# Create your views here.
+
+@login_required(login_url='login')
+@admin_only
+def home(request):
+    breakfast=Category.objects.filter(name='breakfast')[0].fooditem_set.all()[:5]
+    lunch=Category.objects.filter(name='lunch')[0].fooditem_set.all()[:5]
+    dinner=Category.objects.filter(name='dinner')[0].fooditem_set.all()[:5]
+    snacks=Category.objects.filter(name='snacks')[0].fooditem_set.all()[:5]
+    customers=Customer.objects.all()
+    context={'breakfast':breakfast,
+              'lunch':lunch,
+              'dinner':dinner,
+              'snacks':snacks,
+              'customers':customers,
+            }
+    return render(request,'main.html',context)
+
+@login_required(login_url='login')
+@allowed_users(allowed_roles=['admin'])
+def fooditem(request):
+    breakfast=Category.objects.filter(name='breakfast')[0].fooditem_set.all()
+    bcnt=breakfast.count()
+    lunch=Category.objects.filter(name='lunch')[0].fooditem_set.all()
+    lcnt=lunch.count()
+    dinner=Category.objects.filter(name='dinner')[0].fooditem_set.all()
+    dcnt=dinner.count()
+    snacks=Category.objects.filter(name='snacks')[0].fooditem_set.all()
+    scnt=snacks.count()
+    context={'breakfast':breakfast,
+              'bcnt':bcnt,
+              'lcnt':lcnt,
+              'scnt':scnt,
+              'dcnt':dcnt,
+              'lunch':lunch,
+              'dinner':dinner,
+              'snacks':snacks,
+            }
+    return render(request,'fooditem.html',context)
+
+@login_required(login_url='login')
+@allowed_users(allowed_roles=['admin'])
+def createfooditem(request):
+    form = fooditemForm()
+    if request.method == 'POST':
+        form = fooditemForm(request.POST)
+        if form.is_valid():
+            form.save()
+            return redirect('/')
+    context={'form':form}
+    return render(request,'createfooditem.html',context)
+
+@unauthorized_user
+def registerPage(request):
+    form=createUserForm()
+    if request.method=='POST':
+        form=createUserForm(request.POST)
+        if form.is_valid():
+            user=form.save()
+            username=form.cleaned_data.get('username')
+            group=Group.objects.get(name='user')
+            user.groups.add(group)
+            email=form.cleaned_data.get('email')
+            Customer.objects.create(user=user, name=username,email=email)
+            messages.success(request,'Account created for '+username)
+            return redirect('login')
+    context={'form':form}
+    return render(request,'register.html',context)
+
+@unauthorized_user
+def loginPage(request):
+    if request.method=='POST':
+        username=request.POST.get('username')
+        password=request.POST.get('password')
+        user=authenticate(request,username=username,password=password)
+        if user is not None:
+            login(request,user)
+            return redirect('home')
+        else:
+            messages.info(request,'username or password is invalid')
+    return render(request,'login.html')
+
+@login_required(login_url='login')
+def logoutUser(request):
+    logout(request)
+    return redirect('login')
+
+def userPage(request):
+    user=request.user
+    cust=user.customer
+    fooditems=Fooditem.objects.filter()
+    myfilter = fooditemFilter(request.GET,queryset=fooditems)
+    fooditems=myfilter.qs
+    total=UserFooditem.objects.all()
+    myfooditems=total.filter(customer=cust)
+    cnt=myfooditems.count()
+    querysetFood=[]
+    for food in myfooditems:
+        querysetFood.append(food.fooditem.all())
+    finalFoodItems=[]
+    for items in querysetFood:
+        for food_items in items:
+            finalFoodItems.append(food_items)
+    totalCalories=0
+    for foods in finalFoodItems:
+        totalCalories+=foods.calorie
+    CalorieLeft=2000-totalCalories
+    context={'CalorieLeft':CalorieLeft,'totalCalories':totalCalories,'cnt':cnt,'foodlist':finalFoodItems,'fooditem':fooditems,'myfilter':myfilter}
+    return render(request,'user.html',context)
+
+def addFooditem(request):
+    user=request.user
+    cust=user.customer
+    if request.method=="POST":
+        form =addUserFooditem(request.POST)
+        if form.is_valid():
+            form.save()
+            return redirect('/')
+    form=addUserFooditem()
+    context={'form':form}
+    return render(request,'addUserFooditem.html',context)
+
+# static main.css
+.flex-box-row {
+    display:flex;
+    padding : 10px;
+    flex-wrap: wrap;
+    justify-content: space-around;
+}
+
+#heading{
+    text-shadow: antiquewhite;
+    font-family: 'Courier New', Courier, monospace;
+    font-weight: 550;
+    font-size: xx-large;
+    text-align: left;
+}
+
+# template
+# addUserFooditem.html
+{% extends 'main.html' %}
+{% load static%}
+{% block content %}
+<head>
+    <style>
+        form{
+            border:1px solid black;
+            margin:auto;
+            padding: 40px;
+        }
+    </style>
+</head>
+<form action="" method="POST">
+    {% csrf_token %}
+    {{form.as_p}}
+    <input type="submit" class="btn btn-success" value="submit">
+</form>
+{% endblock %}
+
+# createfooditem.html
+{% extends 'main.html' %}
+{% load static%}
+{% block content %}
+<head>
+    <style>
+        form{
+            border:1px solid black;
+            margin:auto;
+            padding: 40px;
+        }
+    </style>
+</head>
+<form action="" method="POST">
+    {% csrf_token %}
+    {{form.as_p}}
+    <input type="submit" class="btn btn-success" value="submit">
+</form>
+{% endblock %}
+
+# fooditem.html
+{% extends 'main.html' %}
+{% load static%}
+
+{% block content %}
+    <div class="flex-box-row">
+        <br>
+        <br>
+        <h5 id="heading">Breakfast</h5>
+        <h7>Total options:{{bcnt}}</h7>
+            <a class="btn btn-primary  btn-sm btn-block" href="{% url 'createfooditem' %}">Add more options</a>
+            <table class="table table-sm">
+                <tr>
+                    <th>Name</th>
+                    <th>Carbs</th>
+                    <th>Fats</th>
+                    <th>Protien</th>
+                    <th>Calorie</th>
+                    
+                </tr>
+               {% for items in breakfast %}
+                <tr>
+                    <td>{{items.name}} </td>
+                    <td>{{items.carbohydrate}} </td>
+                    <td>{{items.fats}} </td>
+                    <td>{{items.protein}} </td>
+                    <td>{{items.calorie}} </td>
+                    </tr>
+                    
+                {% endfor %}
+            </table>
+    </div>
+    <br>
+<!---------------------------->
+    <div class="flex-box-row">
+        <h5 id="heading">Lunch</h5>
+        <h7>Total options:{{lcnt}}</h7>
+        
+            <a class="btn btn-primary  btn-sm btn-block" href="{% url 'createfooditem' %}">Add more options</a>
+            <table class="table table-sm">
+                <tr>
+                    <th>Name</th>
+                    <th>Carbs</th>
+                    <th>Fats</th>
+                    <th>Protien</th>
+                    <th>Calorie</th>
+                    
+                </tr>
+               {% for items in lunch %}
+                <tr>
+                    <td>{{items.name}} </td>
+                    <td>{{items.carbohydrate}} </td>
+                    <td>{{items.fats}} </td>
+                    <td>{{items.protein}} </td>
+                    <td>{{items.calorie}} </td>
+                    </tr>
+                    
+                {% endfor %}
+            </table>
+       
+    </div>
+    <br>
+<!------------------------------------------->
+    <div class="flex-box-row">
+        <h5 id="heading">Snacks</h5>
+        <h7>Total options:{{scnt}}</h7>
+            <a class="btn btn-primary  btn-sm btn-block" href="{% url 'createfooditem' %}">Add more options</a>
+            <table class="table table-sm">
+                <tr>
+                    <th>Name</th>
+                    <th>Carbs</th>
+                    <th>Fats</th>
+                    <th>Protien</th>
+                    <th>Calorie</th>
+                    
+                </tr>
+               {% for items in snacks %}
+                <tr>
+                    <td>{{items.name}} </td>
+                    <td>{{items.carbohydrate}} </td>
+                    <td>{{items.fats}} </td>
+                    <td>{{items.protein}} </td>
+                    <td>{{items.calorie}} </td>
+                    </tr>
+                    
+                {% endfor %}
+            </table>
+    </div>
+    <br>
+<!-------------------------------------->
+    <div class="flex-box-row">
+        <h5 id="heading">Dinner</h5>
+        <h7>Total options:{{dcnt}}</h7>
+            <a class="btn btn-primary  btn-sm btn-block" href="{% url 'createfooditem' %}">Add more options</a>
+            <table class="table table-sm">
+                <tr>
+                    <th>Name</th>
+                    <th>Carbs</th>
+                    <th>Fats</th>
+                    <th>Protien</th>
+                    <th>Calorie</th>
+                </tr>
+               {% for items in dinner %}
+                <tr>
+                    <td>{{items.name}} </td>
+                    <td>{{items.carbohydrate}} </td>
+                    <td>{{items.fats}} </td>
+                    <td>{{items.protein}} </td>
+                    <td>{{items.calorie}} </td>
+                    </tr>
+                    
+                {% endfor %}
+            </table>
+    </div>
+    <br>
+</div>
+{% endblock %}
+
+# login.html
+{% load static %}
+<!DOCTYPE html>
+<html>
+    
+<head>
+	<title>Login</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.min.css" integrity="sha384-9aIt2nRpC12Uk9gS9baDl411NQApFmC26EwAOH8WgZl5MYYxFfc+NcPb1dKGj7Sk" crossorigin="anonymous"0>
+    <link rel="stylesheet" href="{% static 'css/main.css' %}">
+
+	<style>
+		body,
+		html {
+			margin: 0;
+			padding: 0;
+            height: 100%;
+		}
+		.user_card {
+			width: 350px;
+			margin-top: auto;
+			margin-bottom: auto;
+			position: relative;
+			display: flex;
+			justify-content: center;
+			flex-direction: column;
+			padding: 10px;
+			box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19);
+			-webkit-box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19);
+			-moz-box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19);
+			border-radius: 5px;
+            
+		}
+
+		.form_container {
+			margin-top: 20px;
+		}
+
+		.login_btn:focus {
+			box-shadow: none !important;
+			outline: 0px !important;
+		}
+		.login_container {
+			padding: 0 2rem;
+		}
+		.input-group-text {
+            background: #f7ba5b !important;
+			color: white !important;
+			border: 0 !important;
+			border-radius: 0.25rem 0 0 0.25rem !important;
+		}
+		.input_user,
+		.input_pass:focus {
+			box-shadow: none !important;
+			outline: 0px !important;
+		}
+		#messages{
+			background-color: grey;
+			color: #fff;
+			padding: 10px;
+			margin-top: 10px;
+		}
+	</style>
+
+</head>
+<body>
+	<div class="container h-100">
+		<div class="d-flex justify-content-center h-100">
+			<div class="user_card">
+				<div class="d-flex justify-content-center">
+
+
+					<h3 id="form-title">LOGIN</h3>
+				</div>
+				<div class="d-flex justify-content-center form_container">
+					<form method="POST" action="">
+						{% csrf_token %}
+						<div class="input-group mb-3">
+							<div class="input-group-append">
+								<span class="input-group-text"><i class="fas fa-user"></i></span>
+							</div>
+
+							<input type="text" name="username" placeholder="Username..." class="form-control">
+						</div>
+
+						<div class="input-group mb-2">
+							<div class="input-group-append">
+								<span class="input-group-text"><i class="fas fa-key"></i></span>
+							</div>
+
+								<input type="password" name="password" placeholder="Password..." class="form-control" >
+						</div>
+
+							<div class="d-flex justify-content-center mt-3 login_container">
+				 				<input class="btn  btn-success" type="submit" value="Login">
+				   			</div>
+					</form>
+
+				</div>
+
+				{% for message in messages %}
+					<p id="messages">{{message}}</p>
+				{% endfor %}			
+		
+				<div class="mt-4">
+					<div class="d-flex justify-content-center links">
+						Don't have an account? <a href="{% url 'register' %}" class="ml-2">Sign Up</a>
+					</div>
+					<div class="d-flex justify-content-center links">
+						Forgot password? <a href="{% url 'reset_password' %}" class="ml-2">Click here</a>
+					</div>
+			
+				</div>
+			</div>
+		</div>
+	</div>
+</body>
+</html>
+
+# main.html
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fityfeed</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.min.css" integrity="sha384-9aIt2nRpC12Uk9gS9baDl411NQApFmC26EwAOH8WgZl5MYYxFfc+NcPb1dKGj7Sk" crossorigin="anonymous"0>
+    <link rel="stylesheet" href="{% static 'css/main.css' %}">
+</head>
+<body>
+    {% include 'navbar.html' %}
+    <br>
+    <br>
+    <div class="container">
+    {% block content %}
+        <div class="flex-box-row">
+            <h5 id="heading">CUSTOMERS:</h5>
+            <br>
+            <br>
+            <div class="card card-body">
+               <table class="table table-sm">
+                    <tr>
+                        <th>Customer</th>
+                        <th>Email</th>
+                    </tr>
+                    {% for cust in customers %}
+                    <tr>
+                        <td>{{cust.name}} </td>
+                        <td> {{cust.email}} </td>
+                    </tr>
+                    {% endfor %}
+                </table>
+            </div>
+        </div>
+        <br><br>
+    <h4>List of available food items:</h4>
+<!------------------------->
+        <div class="flex-box-row">
+            <h5 id="heading">Breakfast</h5>
+               <table class="table table-sm">
+                    <tr>
+                        <th>Name</th>
+                        <th>Carbs</th>
+                        <th>Fats</th>
+                        <th>Protien</th>
+                        <th>Calorie</th>
+                        
+                    </tr>
+                   {% for items in breakfast %}
+                    <tr>
+                        <td>{{items.name}} </td>
+                        <td>{{items.carbohydrate}} </td>
+                        <td>{{items.fats}} </td>
+                        <td>{{items.protein}} </td>
+                        <td>{{items.calorie}} </td>
+                        </tr>
+                        
+                    {% endfor %}
+                </table>
+        </div>
+<br>
+<!------------------------------------------------------------------------------------------------------->
+        <div class="flex-box-row">
+            <h5 id="heading">Lunch</h5>
+             <table class="table table-sm">
+                    <tr>
+                        <th>Name</th>
+                        <th>Carbs</th>
+                        <th>Fats</th>
+                        <th>Protien</th>
+                        <th>Calorie</th>
+                        
+                    </tr>
+                   {% for items in lunch %}
+                    <tr>
+                        <td>{{items.name}} </td>
+                        <td>{{items.carbohydrate}} </td>
+                        <td>{{items.fats}} </td>
+                        <td>{{items.protein}} </td>
+                        <td>{{items.calorie}} </td>
+                        </tr>
+                        
+                    {% endfor %}
+                </table>
+        </div>
+        <br>
+<!------------------------------------------->
+        <div class="flex-box-row">
+            <h5 id="heading">Snacks</h5>
+                <table class="table table-sm">
+                    <tr>
+                        <th>Name</th>
+                        <th>Carbs</th>
+                        <th>Fats</th>
+                        <th>Protien</th>
+                        <th>Calorie</th>
+                        
+                    </tr>
+                   {% for items in snacks %}
+                    <tr>
+                        <td>{{items.name}} </td>
+                        <td>{{items.carbohydrate}} </td>
+                        <td>{{items.fats}} </td>
+                        <td>{{items.protein}} </td>
+                        <td>{{items.calorie}} </td>
+                        </tr>
+                        
+                    {% endfor %}
+                </table>
+        </div>
+        <br>
+<!-------------------------------------->
+        <div class="flex-box-row">
+            <h5 id="heading">Dinner</h5>
+                <table class="table table-sm">
+                    <tr>
+                        <th>Name</th>
+                        <th>Carbs</th>
+                        <th>Fats</th>
+                        <th>Protien</th>
+                        <th>Calorie</th>
+                        
+                    </tr>
+                   {% for items in dinner %}
+                    <tr>
+                        <td>{{items.name}} </td>
+                        <td>{{items.carbohydrate}} </td>
+                        <td>{{items.fats}} </td>
+                        <td>{{items.protein}} </td>
+                        <td>{{items.calorie}} </td>
+                        </tr>
+                        
+                    {% endfor %}
+                </table>
+        </div>
+<br>
+    {% endblock %}
+    </div>
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js" integrity="sha384-DfXdz2htPH0lsSSs5nCTpuj/zy4C+OGpamoFVy38MVBnE+IbbVYUew+OrCXaRkfj" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.0/dist/umd/popper.min.js" integrity="sha384-Q6E9RHvbIyZFJoft+2mJbHaEWldlvI9IOYy5n3zV9zzTtmI3UksdQRVvoxMfooAo" crossorigin="anonymous"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/js/bootstrap.min.js" integrity="sha384-OgVRvuATP1z7JjHLkuOU7Xw704+h835Lr+6QL9UvYjZE3Ipu6Tp75j7Bh/kR0JKI" crossorigin="anonymous"></script>
+   
+</body>
+</html>
+
+# navbar.html
+{% load static%}
+
+<style>
+  .hello-msg{
+    font-size: 18px;
+    color: #fff;
+    margin-right: 20px;
+  }
+</style>
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+    <a class="navbar-brand" href="{% url 'home' %}">Fityfeed</a>
+    <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+  
+    <div class="collapse navbar-collapse" id="navbarSupportedContent">
+    {% if request.user.is_staff %}
+      <ul class="navbar-nav mr-auto">
+        <li class="nav-item active">
+          <a class="nav-link" href="{% url 'fooditem' %}">Fooditem<span class="sr-only">(current)</span></a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="{% url 'createfooditem' %}">Add more items</a>
+        </li>
+      </ul>
+    {% endif %}
+    </div>
+    <span class="hello-msg">Hello, {{request.user}}</span>
+    <span ><a  class="hello-msg" href="{% url 'logout' %}">Logout</a></span>
+  </nav>
+
+# password_reset_complete.html
+<h3>Password reset complete</h3>
+<p>Your password has been set. You may go ahead and log in now.</p>
+<a href="/">Log in</a>
+
+# password_reset_confirm.html
+<h3>Enter new password</h3>
+<p>Please enter your new password twice so we can verify you typed it in correctly.</p>
+<form method="post">
+	{% csrf_token %}
+	{{form}}
+	<input type="Submit" name="Update Password">
+</form>
+
+# password_reset_done.html
+<h3>Password reset sent</h3>
+<p>We’ve emailed you instructions for setting your password, if an account exists with the email you entered. You should receive them shortly.</p>
+<p>If you don’t receive an email, please make sure you’ve entered the address you registered with, and check your spam folder.</p>
+
+# password_reset.html
+<h3>Password reset</h3>
+<p>Forgotten your password? Enter your email address below, and we’ll provide email instructions for setting a new one.</p>
+<form method="POST">
+	{% csrf_token %}
+	{{form}}
+	<input type="Submit" name="Send email">
+</form>
+
+# register.html
+{% load static %}
+<!DOCTYPE html>
+<html>
+    
+<head>
+	<title>Login</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.min.css" integrity="sha384-9aIt2nRpC12Uk9gS9baDl411NQApFmC26EwAOH8WgZl5MYYxFfc+NcPb1dKGj7Sk" crossorigin="anonymous"0>
+    <link rel="stylesheet" href="{% static 'css/main.css' %}">
+	<style>
+		body,
+		html {
+			margin: 0;
+			padding: 0;
+            height: 100%;
+		}
+		.user_card {
+			width: 350px;
+			margin-top: auto;
+			margin-bottom: auto;
+			position: relative;
+			display: flex;
+			justify-content: center;
+			flex-direction: column;
+			padding: 10px;
+			box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19);
+			-webkit-box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19);
+			-moz-box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19);
+			border-radius: 5px;
+            
+		}
+
+		.form_container {
+			margin-top: 20px;
+		}
+
+		.login_btn:focus {
+			box-shadow: none !important;
+			outline: 0px !important;
+		}
+		.login_container {
+			padding: 0 2rem;
+		}
+		.input-group-text {
+            background: #f7ba5b !important;
+			color: white !important;
+			border: 0 !important;
+			border-radius: 0.25rem 0 0 0.25rem !important;
+		}
+		.input_user,
+		.input_pass:focus {
+			box-shadow: none !important;
+			outline: 0px !important;
+		}
+
+	</style>
+
+</head>
+<body>
+	<div class="container h-100">
+		<div class="d-flex justify-content-center h-100">
+			<div class="user_card">
+				<div class="d-flex justify-content-center">
+					<h3 id="form-title">REGISTER ACCOUNT</h3>
+				</div>
+				<div class="d-flex justify-content-center form_container">
+
+					<form method="POST" action="">
+						{% csrf_token %}
+						<div class="input-group mb-3">
+							<div class="input-group-append">
+								<span class="input-group-text"><i class="fas fa-user"></i></span>
+							</div>
+							{{form.username}}
+						</div>
+						<div class="input-group mb-2">
+							<div class="input-group-append">
+								<span class="input-group-text"><i class="fas fa-envelope-square"></i></span>
+							</div>
+							{{form.email}}
+						</div>
+						<div class="input-group mb-2">
+							<div class="input-group-append">
+								<span class="input-group-text"><i class="fas fa-key"></i></span>
+							</div>
+							{{form.password1}}
+						</div>
+						<div class="input-group mb-2">
+							<div class="input-group-append">
+								<span class="input-group-text"><i class="fas fa-key"></i></span>
+							</div>
+							{{form.password2}}
+						</div>
+
+
+
+				   		<div class="d-flex justify-content-center mt-3 login_container">
+				 			<input class="btn btn-success" type="submit" value="Register Account">
+				   		</div>
+
+					</form>
+				</div>
+
+				{{form.errors}}
+				
+				<div class="mt-4">
+					<div class="d-flex justify-content-center links">
+						Already have an account? <a href="{% url 'login' %}" class="ml-2">Login</a>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+	<script>
+						/* Because i didnt set placeholder values in forms.py they will be set here using vanilla Javascript
+		//We start indexing at one because CSRF_token is considered and input field 
+		 */
+
+		//Query All input fields
+		var form_fields = document.getElementsByTagName('input')
+		form_fields[1].placeholder='Username..';
+		form_fields[2].placeholder='Email..';
+		form_fields[3].placeholder='Enter password...';
+		form_fields[4].placeholder='Re-enter Password...';
+
+
+		for (var field in form_fields){	
+			form_fields[field].className += ' form-control'
+		}
+	</script>
+</body>
+</html>
+
+# user.html
+{% extends 'main.html' %}
+{% block content %}
+<head> <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css"></head>
+<h3>Total number of items consumed today: {{cnt}}</h3>
+
+<div class="today">
+	<h2>Tracker</h2>
+	<div class="flex-box-row">
+		<h3>Calorie Limit: 2000</h3>
+		<h3>totalCalories consumed: {{totalCalories}}</h3>
+		<h3>Left: {{ CalorieLeft }}</h3>
+	</div>
+	
+    <div class="card card-body">
+        <table>
+            <tr>
+                <th>fooditem</th>
+                <th>Calorie</th>
+                <th>Carbs</th>
+                <th>Fats</th>
+                <th>Protien</th>
+            </tr>
+            {% for food in foodlist %}
+            <tr>
+                <td>{{food.name}}</td>
+                <td> {{food.calorie}}</td>
+                <td> {{food.carbohydrate}}</td>
+                <td> {{food.fats}}</td>
+				<td> {{food.protein}}</td>
+			</tr>
+            {% endfor %}
+        </table>
+	</div>
+	<form action="{% url 'addFooditem' %}" method="POST">
+		{%csrf_token%}
+		<button type="submit" class="btn btn-success">
+			<span class="glyphicon glyphicon-plus"></span>
+		</button>
+	</form> 
+</div>
+
+<br>
+<div class="row">
+	<div class="col">
+		<div class="card card-body">
+			<form method="get">
+				{{myfilter.form}}
+		    <button class="btn btn-primary" type="submit">Search</button>
+		  </form>
+		</div>
+	</div>
+</div>
+<br>
+<hr>
+<h3>Available items:</h3>
+<div class="row">
+	<div class="col-md">
+		<div class="card card-body">
+			<table class="table table-sm">
+				<tr>
+					<th>fooditem</th>
+					<th>Calorie</th>
+					<th>Carbs</th>
+					<th>Fats</th>
+					<th>Protien</th>
+				</tr>
+				{% for food in fooditem %}
+				<tr>
+					<td>{{food.name}}</td>
+					<td> {{food.calorie}}</td>
+					<td> {{food.carbohydrate}}</td>
+                    <td> {{food.fats}}</td>
+                    <td> {{food.protein}}</td>
+					</tr>
+				{% endfor %}
+			</table>
+		</div>
+	</div>
+</div>
+{% endblock %}
