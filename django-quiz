@@ -1,0 +1,228 @@
+# quiz folder
+# urls.py
+from django.contrib import admin
+from django.urls import path, include
+urlpatterns = [
+    path("admin/", admin.site.urls),
+    path("", include('quizapp.urls')),
+]
+
+# quizapp
+# forms.py
+from django.forms import ModelForm
+from .models import Ques
+
+class QuestionForm(ModelForm):
+    class Meta:
+        model=Ques
+        fields='__all__'
+
+# models.py
+from django.db import models
+
+# Create your models here.
+class Ques(models.Model):
+    Question=models.CharField(max_length=255)
+    op1=models.CharField(max_length=255)
+    op2=models.CharField(max_length=255)
+    op3=models.CharField(max_length=255)
+    op4=models.CharField(max_length=255)
+    ans=models.CharField(max_length=255,null=True)
+
+# urls.py
+from django.urls import path,include
+from . import views
+urlpatterns = [
+   
+    path('',views.home,name='home'),
+    path('Add',views.addQuestion,name="Add")
+]
+
+# views.py
+from django.shortcuts import render,redirect
+from .forms import QuestionForm
+from .models import Ques
+# Create your views here.
+def home(request):
+    question=Ques.objects.all()
+    print(request)
+    score=0
+    correct=0
+    counter=0
+    timer=0
+    total=0
+    if(request.method=='POST'):
+        for q in question:
+            print(request.POST.get(q.Question)," and Answer is ",q.ans)
+            if(request.POST.get(q.Question)==q.ans):    
+                correct=correct+1
+                score+=10
+            counter=counter+1
+        total=score/(counter*10)*100
+
+        context={
+            "score":score,
+            "timer":request.POST.get('timer'),
+            "total":total,
+            "correct":correct
+        }
+        return render(request,'score.html',context)
+
+    context={'question':question}
+    return render(request,'index.html',context)
+def addQuestion(request):
+    form=QuestionForm()
+    if(request.method=='POST'):
+        form=QuestionForm(request.POST)
+        if(form.is_valid()):
+            form.save()
+            return redirect("home")
+        else:
+            print(form)
+            return redirect('Add')
+    context={'form':form}
+    return render(request,'addQuestion.html',context)
+
+# template
+#addQuestion.html
+{% extends 'index.html' %}
+{% block content %}
+<form id="Add" action="" method="POST">
+    {% csrf_token %}
+    {{form.as_p}}
+    <button type="submit">Submit</button>
+</form>
+{% endblock %}
+
+# index.html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+    <style>
+        form{
+            width: auto;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background: linear-gradient(45deg,pink,blue);
+        }
+        .question{
+            background-color: red;
+            background: linear-gradient(45deg,rgb(252, 120, 120),transparent);
+            margin: 20px 0px;
+            padding: 20px;
+            border-radius: 20px;
+            width: 50%;
+        }
+        h4{
+            display: flex;justify-content: space-between;
+            align-items: center;
+        }
+        h1{
+            
+            background: linear-gradient(45deg,rgb(220, 126, 184),rgb(10, 137, 105));
+         -webkit-text-fill-color: transparent;
+         -webkit-background-clip: text;
+        }
+    #circle{
+        width: 200px;
+        height: 200px;
+        display: flex;justify-content: center;
+        align-items: center;
+        border-radius: 50%;
+        background: linear-gradient(transparent,rgb(171, 98, 202));
+        color: white;
+        border: 2px solid black;
+        color: white;
+    }
+    input{
+        padding: 10px;
+        width: 40%;
+        border-radius: 20px;
+
+    }
+    #score{
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+        background: whitesmoke;
+        font-weight: 800;
+    }
+    </style>
+</head>
+<body>
+
+
+    {% block content %}
+    <h1>Home</h1>
+    <form action="" method="POST">
+        <h2 id="circle">Time  : <div id="timer">0</div></h2>
+        {% csrf_token %}
+    {% for q in question %}
+    
+    
+        <div class="question">
+            <h3>{{q.Question}}</h3>
+    <h4><label for="">{{q.op1}}</label>
+        <input type="radio" name="{{q.Question}}" value="{{q.op1}}" checked>
+    </h4>
+   <h4>
+    <label for="">{{q.op2}}</label>
+    <input type="radio" name="{{q.Question}}" value="{{q.op2}}" >
+   </h4>
+   <h4>
+    <label for="">{{q.op3}}</label>
+    <input type="radio" name="{{q.Question}}" value="{{q.op3}}" >
+   </h4>
+   <h4>
+    <label for="">{{q.op4}}</label>
+    <input type="radio" name="{{q.Question}}" value="{{q.op4}}" >
+   </h4>
+
+        </div>
+
+    
+    
+    
+    {% endfor %}
+
+   <input type="number" name="timer" id="time">
+    <button type="submit">Submit</button>
+</form>
+    {% endblock %}
+
+    <script>
+        let timer=document.getElementById('timer')
+        let time=document.getElementById('time')
+        let counter=0
+      setInterval(() => {
+        counter++
+        timer.innerHTML=`${counter}`
+        time.value=counter
+      }, 1000);
+    </script>
+</body>
+</html>
+
+# score.html
+{% extends 'index.html' %}
+<style>
+   
+</style>
+{% block content %}
+
+<div id="score">
+    <h1 style="font-size: 200px;">Result</h1>
+    <h4>Score : {{score}}</h4>
+<h4>Timer : {{timer}}</h4>
+<h4>Correct : {{correct}}</h4>
+<h4>Total : {{total}}</h4>
+</div>
+{% endblock %}
